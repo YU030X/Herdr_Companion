@@ -86,7 +86,7 @@ export function Hud({
 
   return (
     <>
-      <nav class="workspace-tabs" aria-label="Workspace 筛选">
+      <nav class="workspace-tabs" aria-label="Workspace 筛选" onWheel={handleWorkspaceWheel}>
         <WorkspaceButton
           active={selectedWorkspaceId === "all"}
           count={snapshot.agents.length}
@@ -141,6 +141,17 @@ export function Hud({
       </section>
     </>
   );
+}
+
+function handleWorkspaceWheel(event: WheelEvent) {
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+  const container = event.currentTarget;
+  if (!(container instanceof HTMLElement)) return;
+
+  const previousScrollLeft = container.scrollLeft;
+  container.scrollLeft += event.deltaY;
+  if (container.scrollLeft !== previousScrollLeft) event.preventDefault();
 }
 
 interface WorkspaceButtonProps {
