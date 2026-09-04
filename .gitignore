@@ -1,0 +1,39 @@
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+target/
+src-tauri/gen/schemas/
+src-tauri/icons/*
+!src-tauri/icons/icon.svg
+!src-tauri/icons/icon.ico
+
+# 本地环境配置
+.env
+.env.*
+!.env.example
+
+# 日志与临时文件
+*.log
+*.tmp
+*.swp
+*.swo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 编辑器与 IDE
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+HANDOFF.md

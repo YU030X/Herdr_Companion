@@ -1,0 +1,92 @@
+{
+  "version": "0.8.2-preview.2026-08-31-b1ff4582e968",
+  "protocol": 21,
+  "workspaces": [
+    {
+      "workspace_id": "w1",
+      "number": 1,
+      "label": "Companion",
+      "focused": true,
+      "pane_count": 5,
+      "tab_count": 1,
+      "active_tab_id": "w1:t1",
+      "agent_status": "blocked",
+      "tokens": {}
+    }
+  ],
+  "tabs": [],
+  "panes": [],
+  "layouts": [],
+  "agents": [
+    {
+      "terminal_id": "terminal-working",
+      "agent_status": "working",
+      "workspace_id": "w1",
+      "tab_id": "w1:t1",
+      "pane_id": "pane-working",
+      "focused": false,
+      "revision": 5,
+      "state_change_seq": 3,
+      "name": "worker",
+      "display_agent": "Codex",
+      "tokens": { "summary": "Implement adapter" }
+    },
+    {
+      "terminal_id": "terminal-blocked",
+      "agent_status": "blocked",
+      "workspace_id": "w1",
+      "tab_id": "w1:t1",
+      "pane_id": "pane-blocked",
+      "focused": false,
+      "revision": 7,
+      "name": "reviewer",
+      "agent": "claude",
+      "tokens": {
+        "hc_task": "Approve migration",
+        "hc_parent": "pane-lead"
+      }
+    },
+    {
+      "terminal_id": "terminal-done",
+      "agent_status": "done",
+      "workspace_id": "w1",
+      "tab_id": "w1:t1",
+      "pane_id": "pane-done",
+      "focused": false,
+      "revision": 9,
+      "display_agent": "Pi",
+      "title": "Review complete",
+      "tokens": {}
+    },
+    {
+      "terminal_id": "terminal-idle",
+      "agent_status": "idle",
+      "workspace_id": "w1",
+      "tab_id": "w1:t1",
+      "pane_id": "pane-idle",
+      "focused": true,
+      "revision": 11,
+      "name": "lead",
+      "terminal_title_stripped": "Waiting",
+      "tokens": {}
+    },
+    {
+      "terminal_id": "terminal-unknown",
+      "agent_status": "paused",
+      "workspace_id": "w1",
+      "tab_id": "w1:t1",
+      "pane_id": "pane-unknown",
+      "focused": false,
+      "revision": 13,
+      "name": "observer",
+      "title": "   ",
+      "terminal_title_stripped": "",
+      "tokens": {},
+      "future_field": "ignored"
+    }
+  ],
+  "focused_workspace_id": "w1",
+  "focused_tab_id": "w1:t1",
+  "focused_pane_id": "pane-idle",
+  "future_top_level_field": true
+}
