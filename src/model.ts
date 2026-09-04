@@ -53,17 +53,16 @@ export interface RuntimeView {
 
 export interface StatusMeta {
   label: string;
-  icon: string;
   priority: number;
   tone: AgentStatus;
 }
 
 export const STATUS: Record<AgentStatus, StatusMeta> = {
-  blocked: { label: "Blocked", icon: "!", priority: 0, tone: "blocked" },
-  done: { label: "Done", icon: "✓", priority: 1, tone: "done" },
-  working: { label: "Working", icon: "●", priority: 2, tone: "working" },
-  idle: { label: "Idle", icon: "–", priority: 3, tone: "idle" },
-  unknown: { label: "Unknown", icon: "?", priority: 4, tone: "unknown" },
+  blocked: { label: "Blocked", priority: 0, tone: "blocked" },
+  done: { label: "Done", priority: 1, tone: "done" },
+  working: { label: "Working", priority: 2, tone: "working" },
+  idle: { label: "Idle", priority: 3, tone: "idle" },
+  unknown: { label: "Unknown", priority: 4, tone: "unknown" },
 };
 
 export type StatusCounts = Record<AgentStatus, number>;

@@ -174,8 +174,8 @@ interface AgentCardProps {
 function AgentCard({ agent, duration }: AgentCardProps) {
   const status = STATUS[agent.status];
   return (
-    <article class={`agent-card tone-${status.tone}${agent.focused ? " is-focused" : ""}`}>
-      <span class="status-icon" aria-hidden="true">{status.icon}</span>
+    <article class={`agent-card tone-${status.tone}`}>
+      <span class="status-icon" aria-hidden="true" />
       <span class="agent-copy">
         <span class="agent-title-row">
           <strong>{agent.name}</strong>
