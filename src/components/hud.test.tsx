@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/preact";
+import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
 import { afterEach, expect, it } from "vitest";
 import { Hud } from "./hud";
 import type { CompanionSnapshot, ConnectionView } from "../model";
@@ -131,6 +131,26 @@ it("filters agents when a Workspace tab is selected", () => {
   expect(screen.getByText("Other Worker")).toBeTruthy();
   expect(screen.queryByText("Implement adapter")).toBeNull();
   expect(screen.getAllByRole("article")).toHaveLength(1);
+
+  view.unmount();
+});
+
+it("maps vertical wheel input to horizontal Workspace scrolling", () => {
+  const view = render(
+    <Hud
+      connection={{ ...staleConnection, status: "connected", stale: false }}
+      snapshot={workspaceSnapshot}
+      receivedAt={Date.now()}
+      selectedWorkspaceId="all"
+      onSelectWorkspace={() => undefined}
+    />,
+  );
+
+  const tabs = screen.getByRole("navigation", { name: "Workspace 筛选" });
+  Object.defineProperty(tabs, "scrollLeft", { value: 0, writable: true });
+
+  expect(fireEvent.wheel(tabs, { deltaX: 0, deltaY: 48 })).toBe(false);
+  expect(tabs.scrollLeft).toBe(48);
 
   view.unmount();
 });

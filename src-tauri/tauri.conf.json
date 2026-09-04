@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "Herdr Companion",
-        "width": 380,
-        "height": 520,
-        "minWidth": 360,
-        "minHeight": 480,
+        "width": 360,
+        "height": 480,
+        "minWidth": 320,
+        "minHeight": 400,
         "resizable": true,
         "decorations": false,
         "alwaysOnTop": false
