@@ -9,6 +9,11 @@ edition = "2021"
 name = "herdr_companion_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# Opt-in reproduction of the unsuccessful 2026-09-05 memory experiment.
+webview-memory-experiment = ["dep:webview2-com", "dep:windows-core"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
@@ -16,4 +21,8 @@ tauri-build = { version = "2.6.3", features = [] }
 interprocess = "2.4.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "=2.11.5", features = [] }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = { version = "=0.38.2", optional = true }
+windows-core = { version = "=0.61.2", optional = true }

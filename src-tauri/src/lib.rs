@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
 use herdr::runtime::Runtime;
+#[cfg(all(windows, feature = "webview-memory-experiment"))]
+use tauri::Manager;
 
 mod commands;
 pub mod herdr;
+#[cfg(all(windows, feature = "webview-memory-experiment"))]
+mod memory;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,8 +23,22 @@ pub fn run() {
             commands::set_always_on_top,
         ])
         .setup(move |app| {
+            #[cfg(all(windows, feature = "webview-memory-experiment"))]
+            if let Some(window) = app.get_webview_window("main") {
+                memory::apply(&window, window.is_focused().unwrap_or(true));
+            }
             monitor.start(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            #[cfg(all(windows, feature = "webview-memory-experiment"))]
+            if let tauri::WindowEvent::Focused(focused) = event {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    memory::apply(&webview, *focused);
+                }
+            }
+            #[cfg(not(all(windows, feature = "webview-memory-experiment")))]
+            let _ = (window, event);
         })
         .run(tauri::generate_context!())
         .expect("failed to run Herdr Companion");
