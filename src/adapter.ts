@@ -30,10 +30,16 @@ export async function subscribeToRuntime(
   onSnapshot: (snapshot: CompanionSnapshot) => void,
   onConnection: (connection: ConnectionView) => void,
 ): Promise<UnlistenFn> {
-  const unlisten = await Promise.all([
+  const registrations = await Promise.allSettled([
     listen<CompanionSnapshot>(SNAPSHOT_EVENT, (event) => onSnapshot(event.payload)),
     listen<ConnectionView>(CONNECTION_EVENT, (event) => onConnection(event.payload)),
   ]);
+  const unlisten = registrations.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  const failure = registrations.find((result) => result.status === "rejected");
+  if (failure?.status === "rejected") {
+    for (const stop of unlisten) stop();
+    throw failure.reason;
+  }
 
   return () => {
     for (const stop of unlisten) stop();

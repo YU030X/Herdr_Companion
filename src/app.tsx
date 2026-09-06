@@ -33,24 +33,38 @@ export function App() {
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
+    let snapshotEvents = 0;
+    let connectionEvents = 0;
 
     void (async () => {
       try {
         unsubscribe = await subscribeToRuntime(
           (snapshot) => {
             if (disposed) return;
+            snapshotEvents += 1;
             setReceivedAt(Date.now());
             setRuntime((current) => ({ ...current, snapshot }));
           },
           (connection) => {
             if (disposed) return;
+            connectionEvents += 1;
             setRuntime((current) => ({ ...current, connection }));
           },
         );
+        if (disposed) {
+          unsubscribe();
+          return;
+        }
+        const snapshotVersion = snapshotEvents;
+        const connectionVersion = connectionEvents;
         const current = await getAppState();
         if (!disposed) {
-          setRuntime(current);
-          setReceivedAt(Date.now());
+          // Events received during the initial read take precedence per field.
+          setRuntime((latest) => ({
+            snapshot: snapshotEvents === snapshotVersion ? current.snapshot : latest.snapshot,
+            connection: connectionEvents === connectionVersion ? current.connection : latest.connection,
+          }));
+          if (snapshotEvents === snapshotVersion) setReceivedAt(Date.now());
         }
       } catch (error) {
         if (!disposed) setMessage(errorMessage(error));

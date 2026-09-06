@@ -1,13 +1,14 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "./app";
-import type { ConnectionView, RuntimeView } from "./model";
+import type { CompanionSnapshot, ConnectionView, RuntimeView } from "./model";
 
 const mocks = vi.hoisted(() => ({
-  getAppState: vi.fn(() => new Promise<never>(() => {})),
+  getAppState: vi.fn(() => new Promise<RuntimeView>(() => {})),
   subscribeToRuntime: vi.fn(),
   retryConnection: vi.fn(() => Promise.resolve()),
   onConnection: undefined as ((connection: ConnectionView) => void) | undefined,
+  onSnapshot: undefined as ((snapshot: CompanionSnapshot) => void) | undefined,
 }));
 
 vi.mock("./adapter", () => ({
@@ -35,15 +36,17 @@ const connection = (status: ConnectionView["status"]): ConnectionView => ({
 afterEach(() => {
   cleanup();
   mocks.onConnection = undefined;
+  mocks.onSnapshot = undefined;
   vi.clearAllMocks();
 });
 
 function renderApp() {
   mocks.subscribeToRuntime.mockImplementationOnce(async (
-    _onSnapshot: (snapshot: RuntimeView["snapshot"]) => void,
+    onSnapshot: (snapshot: CompanionSnapshot) => void,
     onConnection: (view: ConnectionView) => void,
   ) => {
     mocks.onConnection = onConnection;
+    mocks.onSnapshot = onSnapshot;
     return vi.fn();
   });
   return render(<App />);
@@ -82,4 +85,52 @@ it("shows an enabled retry button after disconnection and invokes retry", async 
   expect(retry).toHaveProperty("disabled", false);
   fireEvent.click(retry);
   expect(mocks.retryConnection).toHaveBeenCalledOnce();
+});
+
+it("preserves newer snapshot and connection events while the initial read is pending", async () => {
+  let resolve!: (view: RuntimeView) => void;
+  mocks.getAppState.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  renderApp();
+  await waitFor(() => expect(mocks.getAppState).toHaveBeenCalledOnce());
+  const snapshot: CompanionSnapshot = {
+    version: "test", protocol: 21, capturedAt: 2000, focusedWorkspaceId: null,
+    agents: [], workspaces: [{ id: "new", number: 1, label: "Latest workspace", focused: false }],
+  };
+  await act(async () => {
+    mocks.onSnapshot?.(snapshot);
+    mocks.onConnection?.(connection("connected"));
+    resolve({ snapshot: null, connection: connection("connecting") });
+  });
+  expect(screen.getByRole("button", { name: /Latest workspace/ })).toBeTruthy();
+  expect(screen.getByText("已连接")).toBeTruthy();
+  expect(screen.getByText("Protocol 21")).toBeTruthy();
+});
+
+it("keeps initial snapshot data when only the connection changes during startup", async () => {
+  let resolve!: (view: RuntimeView) => void;
+  mocks.getAppState.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  renderApp();
+  await waitFor(() => expect(mocks.getAppState).toHaveBeenCalledOnce());
+  await act(async () => {
+    mocks.onConnection?.(connection("disconnected"));
+    resolve({
+      snapshot: { version: "test", protocol: 21, capturedAt: 0, focusedWorkspaceId: null, agents: [], workspaces: [] },
+      connection: connection("connected"),
+    });
+  });
+  expect(screen.getByText("Protocol 21")).toBeTruthy();
+  expect(screen.getByText("已断开")).toBeTruthy();
+  expect(screen.getByText("Snapshot 已过期")).toBeTruthy();
+});
+
+it("releases listeners that finish registering after unmount", async () => {
+  let resolve!: (stop: () => void) => void;
+  const stop = vi.fn();
+  mocks.subscribeToRuntime.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  const app = render(<App />);
+  await waitFor(() => expect(mocks.subscribeToRuntime).toHaveBeenCalledOnce());
+  app.unmount();
+  await act(async () => { resolve(stop); });
+  expect(stop).toHaveBeenCalledOnce();
+  expect(mocks.getAppState).not.toHaveBeenCalled();
 });

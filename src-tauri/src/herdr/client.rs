@@ -344,6 +344,15 @@ mod tests {
 
     #[cfg(any(unix, windows))]
     fn focus_result_over_local_socket(result: serde_json::Value, suffix: &str) {
+        focus_response_over_local_socket(json!({ "result": result }), suffix, true);
+    }
+
+    #[cfg(any(unix, windows))]
+    fn focus_response_over_local_socket(
+        mut response: serde_json::Value,
+        suffix: &str,
+        succeeds: bool,
+    ) {
         use std::thread;
 
         use interprocess::local_socket::traits::Listener as _;
@@ -381,21 +390,19 @@ mod tests {
             let request: serde_json::Value = serde_json::from_str(&line).expect("request json");
             assert_eq!(request["method"], "agent.focus");
             assert_eq!(request["params"]["target"], "worker");
-            writeln!(
-                stream,
-                "{}",
-                json!({
-                    "id": request["id"],
-                    "result": result,
-                })
-            )
-            .expect("response");
+            response["id"] = request["id"].clone();
+            writeln!(stream, "{response}").expect("response");
         });
 
         let client = HerdrClient::with_endpoint(endpoint);
-        client
-            .focus_agent("worker")
-            .expect("successful focus envelope should be accepted");
+        let result = client.focus_agent("worker");
+        if succeeds {
+            result.expect("successful focus envelope should be accepted");
+        } else {
+            assert!(
+                matches!(result, Err(ClientError::Server(response)) if response.error.code == "target_not_found")
+            );
+        }
         server.join().expect("server thread");
     }
 
@@ -414,6 +421,16 @@ mod tests {
                 "agent": { "name": "worker", "pane_id": "pane-1" }
             }),
             "agent-info",
+        );
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn focus_rejects_an_expired_target_error() {
+        focus_response_over_local_socket(
+            json!({ "error": { "code": "target_not_found", "message": "Synthetic target no longer exists" } }),
+            "expired",
+            false,
         );
     }
 

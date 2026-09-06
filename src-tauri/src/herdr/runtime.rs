@@ -11,6 +11,21 @@ use super::schema::SessionSnapshot;
 pub const SNAPSHOT_EVENT: &str = "companion://snapshot-changed";
 pub const CONNECTION_EVENT: &str = "companion://connection-changed";
 
+trait RuntimeEvents {
+    fn snapshot(&self, snapshot: CompanionSnapshot);
+    fn connection(&self, connection: ConnectionView);
+}
+
+impl RuntimeEvents for AppHandle {
+    fn snapshot(&self, snapshot: CompanionSnapshot) {
+        let _ = self.emit(SNAPSHOT_EVENT, snapshot);
+    }
+
+    fn connection(&self, connection: ConnectionView) {
+        let _ = self.emit(CONNECTION_EVENT, connection);
+    }
+}
+
 const RETRY_DELAYS: [Duration; 5] = [
     Duration::from_millis(250),
     Duration::from_millis(500),
@@ -55,7 +70,11 @@ pub struct Runtime {
 impl Runtime {
     pub fn new() -> Result<Self, ClientError> {
         let client = HerdrClient::local()?;
-        Ok(Self {
+        Ok(Self::with_client(client))
+    }
+
+    fn with_client(client: HerdrClient) -> Self {
+        Self {
             client,
             view: RwLock::new(RuntimeView {
                 connection: ConnectionView {
@@ -69,7 +88,7 @@ impl Runtime {
             retry_generation: Mutex::new(0),
             retry_signal: Condvar::new(),
             started_at: Instant::now(),
-        })
+        }
     }
 
     pub fn start(self: Arc<Self>, app: AppHandle) {
@@ -105,40 +124,51 @@ impl Runtime {
     fn monitor(&self, app: AppHandle) {
         let mut failure_index = 0;
         loop {
-            self.publish_connection(
-                &app,
-                ConnectionStatus::Connecting,
-                "正在连接 Herdr".to_owned(),
-                None,
-            );
-
-            match self.connect_and_monitor(&app) {
-                Ok(()) => failure_index = 0,
-                Err(MonitorError::Client(error)) => {
-                    self.publish_connection(
-                        &app,
-                        ConnectionStatus::Disconnected,
-                        error.to_string(),
-                        None,
-                    );
-                }
-                Err(MonitorError::Incompatible { version, protocol }) => {
-                    self.publish_connection(
-                        &app,
-                        ConnectionStatus::Incompatible,
-                        format!("Herdr 协议不兼容：需要 {EXPECTED_PROTOCOL}，当前为 {protocol}"),
-                        Some(version),
-                    );
-                }
-            }
-
-            let delay = RETRY_DELAYS[failure_index.min(RETRY_DELAYS.len() - 1)];
-            failure_index = (failure_index + 1).min(RETRY_DELAYS.len() - 1);
-            self.wait_for_retry(delay);
+            // Capture before publishing Disconnected so an immediate retry is not lost.
+            let generation = *self.retry_generation.lock().expect("retry signal poisoned");
+            let delay = self.monitor_once(&app, &mut failure_index);
+            self.wait_for_retry(delay, generation);
         }
     }
 
-    fn connect_and_monitor(&self, app: &AppHandle) -> Result<(), MonitorError> {
+    fn monitor_once(&self, app: &impl RuntimeEvents, failure_index: &mut usize) -> Duration {
+        self.publish_connection(
+            app,
+            ConnectionStatus::Connecting,
+            "正在连接 Herdr".to_owned(),
+            None,
+        );
+
+        match self.connect_and_monitor(app, failure_index) {
+            Ok(()) => {}
+            Err(MonitorError::Client(error)) => {
+                self.publish_connection(
+                    app,
+                    ConnectionStatus::Disconnected,
+                    error.to_string(),
+                    None,
+                );
+            }
+            Err(MonitorError::Incompatible { version, protocol }) => {
+                self.publish_connection(
+                    app,
+                    ConnectionStatus::Incompatible,
+                    format!("Herdr 协议不兼容：需要 {EXPECTED_PROTOCOL}，当前为 {protocol}"),
+                    Some(version),
+                );
+            }
+        }
+
+        let delay = RETRY_DELAYS[(*failure_index).min(RETRY_DELAYS.len() - 1)];
+        *failure_index = (*failure_index + 1).min(RETRY_DELAYS.len() - 1);
+        delay
+    }
+
+    fn connect_and_monitor(
+        &self,
+        app: &impl RuntimeEvents,
+        failure_index: &mut usize,
+    ) -> Result<(), MonitorError> {
         let server = self.client.ping()?;
         if server.protocol != EXPECTED_PROTOCOL {
             return Err(MonitorError::Incompatible {
@@ -149,16 +179,23 @@ impl Runtime {
 
         let snapshot = self.client.snapshot()?;
         let mut pane_ids = agent_pane_ids(&snapshot);
-        self.publish_snapshot(app, snapshot);
-        self.publish_connection(
-            app,
-            ConnectionStatus::Connected,
-            "Herdr 已连接".to_owned(),
-            Some(server.version),
-        );
-
         loop {
             let mut subscription = self.client.subscribe(&pane_ids)?;
+            // Re-read after every subscription acknowledgement to cover changes in the gap.
+            let snapshot = self.client.snapshot()?;
+            let next_pane_ids = agent_pane_ids(&snapshot);
+            self.publish_snapshot(app, snapshot);
+            if next_pane_ids != pane_ids {
+                pane_ids = next_pane_ids;
+                continue;
+            }
+            *failure_index = 0;
+            self.publish_connection(
+                app,
+                ConnectionStatus::Connected,
+                "Herdr 已连接".to_owned(),
+                Some(server.version.clone()),
+            );
             loop {
                 let event = subscription.read_event()?;
                 let _ = (event.event, event.data);
@@ -174,7 +211,7 @@ impl Runtime {
         }
     }
 
-    fn publish_snapshot(&self, app: &AppHandle, raw: SessionSnapshot) {
+    fn publish_snapshot(&self, app: &impl RuntimeEvents, raw: SessionSnapshot) {
         let observed_at = self.monotonic_millis();
         let previous = self
             .view
@@ -185,12 +222,12 @@ impl Runtime {
         let snapshot = reconcile_snapshot(raw, observed_at, previous.as_ref());
 
         self.view.write().expect("runtime view poisoned").snapshot = Some(snapshot.clone());
-        let _ = app.emit(SNAPSHOT_EVENT, snapshot);
+        app.snapshot(snapshot);
     }
 
     fn publish_connection(
         &self,
-        app: &AppHandle,
+        app: &impl RuntimeEvents,
         status: ConnectionStatus,
         detail: String,
         server_version: Option<String>,
@@ -206,7 +243,7 @@ impl Runtime {
             view.connection = connection.clone();
             connection
         };
-        let _ = app.emit(CONNECTION_EVENT, connection);
+        app.connection(connection);
     }
 
     fn monotonic_millis(&self) -> u64 {
@@ -217,9 +254,8 @@ impl Runtime {
             .unwrap_or(u64::MAX)
     }
 
-    fn wait_for_retry(&self, duration: Duration) {
+    fn wait_for_retry(&self, duration: Duration, current: u64) {
         let generation = self.retry_generation.lock().expect("retry signal poisoned");
-        let current = *generation;
         let _ = self
             .retry_signal
             .wait_timeout_while(generation, duration, |value| *value == current)
@@ -272,3 +308,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, windows))]
+mod connection_tests;
