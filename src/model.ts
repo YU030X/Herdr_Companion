@@ -1,5 +1,5 @@
 export type AgentStatus = "blocked" | "done" | "working" | "idle" | "unknown";
-export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "incompatible";
+export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 export type TaskSource = "token" | "title" | "terminal-title";
 
 export interface ConnectionView {

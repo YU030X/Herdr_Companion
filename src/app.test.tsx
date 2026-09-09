@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "./app";
 import type { CompanionSnapshot, ConnectionView, RuntimeView } from "./model";
@@ -18,12 +19,6 @@ vi.mock("./adapter", () => ({
   retryConnection: mocks.retryConnection,
   setAlwaysOnTop: vi.fn(() => Promise.resolve()),
   subscribeToRuntime: mocks.subscribeToRuntime,
-}));
-
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: vi.fn(() => ({
-    startDragging: vi.fn(() => Promise.resolve()),
-  })),
 }));
 
 const connection = (status: ConnectionView["status"]): ConnectionView => ({
@@ -93,7 +88,7 @@ it("preserves newer snapshot and connection events while the initial read is pen
   renderApp();
   await waitFor(() => expect(mocks.getAppState).toHaveBeenCalledOnce());
   const snapshot: CompanionSnapshot = {
-    version: "test", protocol: 21, capturedAt: 2000, focusedWorkspaceId: null,
+    version: "test", protocol: 22, capturedAt: 2000, focusedWorkspaceId: null,
     agents: [], workspaces: [{ id: "new", number: 1, label: "Latest workspace", focused: false }],
   };
   await act(async () => {
@@ -103,7 +98,7 @@ it("preserves newer snapshot and connection events while the initial read is pen
   });
   expect(screen.getByRole("button", { name: /Latest workspace/ })).toBeTruthy();
   expect(screen.getByText("已连接")).toBeTruthy();
-  expect(screen.getByText("Protocol 21")).toBeTruthy();
+  expect(screen.getByText("Protocol 22")).toBeTruthy();
 });
 
 it("keeps initial snapshot data when only the connection changes during startup", async () => {
@@ -114,11 +109,11 @@ it("keeps initial snapshot data when only the connection changes during startup"
   await act(async () => {
     mocks.onConnection?.(connection("disconnected"));
     resolve({
-      snapshot: { version: "test", protocol: 21, capturedAt: 0, focusedWorkspaceId: null, agents: [], workspaces: [] },
+      snapshot: { version: "test", protocol: 22, capturedAt: 0, focusedWorkspaceId: null, agents: [], workspaces: [] },
       connection: connection("connected"),
     });
   });
-  expect(screen.getByText("Protocol 21")).toBeTruthy();
+  expect(screen.getByText("Protocol 22")).toBeTruthy();
   expect(screen.getByText("已断开")).toBeTruthy();
   expect(screen.getByText("Snapshot 已过期")).toBeTruthy();
 });
@@ -133,4 +128,38 @@ it("releases listeners that finish registering after unmount", async () => {
   await act(async () => { resolve(stop); });
   expect(stop).toHaveBeenCalledOnce();
   expect(mocks.getAppState).not.toHaveBeenCalled();
+});
+
+it("keeps the custom titlebar outside the scrolling region", () => {
+  const app = renderApp();
+  const titlebar = document.querySelector<HTMLElement>(".titlebar");
+  expect(titlebar?.parentElement?.className).toBe("app-shell");
+
+  const styles = readFileSync("src/styles.css", "utf8");
+  expect(styles).toMatch(/body\s*{[^}]*overflow:\s*hidden/);
+  expect(styles).toMatch(/\.app-content\s*{[^}]*overflow:\s*hidden/);
+  expect(styles).toMatch(/\.agent-list\s*{[^}]*overflow-y:\s*auto/);
+  expect(styles).toMatch(/\.app-content\s*{[^}]*padding:\s*var\(--main-padding\)\s+8px\s+8px/);
+  expect(styles).toMatch(/\.agent-card\s*{[^}]*padding:\s*var\(--card-padding-block\)\s+8px/);
+  expect(styles).not.toContain("@media (max-width: 390px)");
+  app.unmount();
+});
+
+it("marks only non-interactive titlebar content as a drag region", () => {
+  const app = renderApp();
+  const titlebar = document.querySelector<HTMLElement>(".titlebar");
+  const brand = document.querySelector<HTMLElement>(".titlebar-brand");
+  const mark = document.querySelector<HTMLElement>(".titlebar-mark");
+  const title = screen.getByText("Herdr Companion", { selector: "span" });
+  const controls = document.querySelector<HTMLElement>(".window-controls");
+
+  expect(titlebar?.hasAttribute("data-tauri-drag-region")).toBe(true);
+  expect(brand?.hasAttribute("data-tauri-drag-region")).toBe(true);
+  expect(mark?.hasAttribute("data-tauri-drag-region")).toBe(true);
+  expect(title.hasAttribute("data-tauri-drag-region")).toBe(true);
+  expect(controls?.hasAttribute("data-tauri-drag-region")).toBe(false);
+  for (const button of controls?.querySelectorAll("button") ?? []) {
+    expect(button.hasAttribute("data-tauri-drag-region")).toBe(false);
+  }
+  app.unmount();
 });

@@ -18,8 +18,6 @@ use super::schema::{
     SessionSnapshot, Subscription, SubscriptionEvent, SuccessResponse, WireResponse,
 };
 
-pub const EXPECTED_PROTOCOL: u32 = 21;
-
 const LIFECYCLE_SUBSCRIPTIONS: &[&str] = &[
     "workspace.created",
     "workspace.updated",
@@ -470,8 +468,12 @@ mod tests {
                 "id": request["id"],
                 "result": {
                     "type": "pong",
-                    "version": "0.8.2-preview.2026-08-31-b1ff4582e968",
-                    "protocol": EXPECTED_PROTOCOL
+                    "version": "0.9.0-preview.2026-09-08-62431dbd033b",
+                    "protocol": 22,
+                    "capabilities": {
+                        "endpoint_protocol_generation": 1,
+                        "live_handoff": true
+                    }
                 }
             });
             writeln!(stream, "{response}").expect("response");
@@ -479,7 +481,7 @@ mod tests {
 
         let client = HerdrClient::with_endpoint(endpoint);
         let server_info = client.ping().expect("ping should succeed");
-        assert_eq!(server_info.protocol, EXPECTED_PROTOCOL);
+        assert_eq!(server_info.protocol, 22);
         server.join().expect("server thread");
     }
 

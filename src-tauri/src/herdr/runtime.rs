@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use super::client::{ClientError, HerdrClient, EXPECTED_PROTOCOL};
+use super::client::{ClientError, HerdrClient};
 use super::model::{reconcile_snapshot, CompanionSnapshot};
 use super::schema::SessionSnapshot;
 
@@ -40,7 +40,6 @@ pub enum ConnectionStatus {
     Connecting,
     Connected,
     Disconnected,
-    Incompatible,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -139,24 +138,8 @@ impl Runtime {
             None,
         );
 
-        match self.connect_and_monitor(app, failure_index) {
-            Ok(()) => {}
-            Err(MonitorError::Client(error)) => {
-                self.publish_connection(
-                    app,
-                    ConnectionStatus::Disconnected,
-                    error.to_string(),
-                    None,
-                );
-            }
-            Err(MonitorError::Incompatible { version, protocol }) => {
-                self.publish_connection(
-                    app,
-                    ConnectionStatus::Incompatible,
-                    format!("Herdr 协议不兼容：需要 {EXPECTED_PROTOCOL}，当前为 {protocol}"),
-                    Some(version),
-                );
-            }
+        if let Err(error) = self.connect_and_monitor(app, failure_index) {
+            self.publish_connection(app, ConnectionStatus::Disconnected, error.to_string(), None);
         }
 
         let delay = RETRY_DELAYS[(*failure_index).min(RETRY_DELAYS.len() - 1)];
@@ -168,15 +151,8 @@ impl Runtime {
         &self,
         app: &impl RuntimeEvents,
         failure_index: &mut usize,
-    ) -> Result<(), MonitorError> {
+    ) -> Result<(), ClientError> {
         let server = self.client.ping()?;
-        if server.protocol != EXPECTED_PROTOCOL {
-            return Err(MonitorError::Incompatible {
-                version: server.version,
-                protocol: server.protocol,
-            });
-        }
-
         let snapshot = self.client.snapshot()?;
         let mut pane_ids = agent_pane_ids(&snapshot);
         loop {
@@ -272,18 +248,6 @@ fn agent_pane_ids(snapshot: &SessionSnapshot) -> Vec<String> {
     pane_ids.sort();
     pane_ids.dedup();
     pane_ids
-}
-
-#[derive(Debug)]
-enum MonitorError {
-    Client(ClientError),
-    Incompatible { version: String, protocol: u32 },
-}
-
-impl From<ClientError> for MonitorError {
-    fn from(error: ClientError) -> Self {
-        Self::Client(error)
-    }
 }
 
 #[cfg(test)]

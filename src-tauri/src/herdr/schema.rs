@@ -182,8 +182,12 @@ mod tests {
             "id": "companion:ping",
             "result": {
                 "type": "pong",
-                "version": "0.8.2-preview.2026-08-31-b1ff4582e968",
-                "protocol": 21,
+                "version": "0.9.0-preview.2026-09-08-62431dbd033b",
+                "protocol": 22,
+                "capabilities": {
+                    "endpoint_protocol_generation": 1,
+                    "live_handoff": true
+                },
                 "future_field": true
             }
         }))
@@ -194,8 +198,8 @@ mod tests {
                 result: ResponseResult::Pong { version, protocol },
             }) => {
                 assert_eq!(id, "companion:ping");
-                assert_eq!(version, "0.8.2-preview.2026-08-31-b1ff4582e968");
-                assert_eq!(protocol, 21);
+                assert_eq!(version, "0.9.0-preview.2026-09-08-62431dbd033b");
+                assert_eq!(protocol, 22);
             }
             _ => panic!("expected pong response"),
         }

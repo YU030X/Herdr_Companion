@@ -1,13 +1,19 @@
 use std::sync::Arc;
 
 use herdr::runtime::Runtime;
-#[cfg(all(windows, feature = "webview-memory-experiment"))]
 use tauri::Manager;
+use tauri_plugin_window_state::WindowExt;
 
 mod commands;
 pub mod herdr;
 #[cfg(all(windows, feature = "webview-memory-experiment"))]
 mod memory;
+
+fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+
+    StateFlags::POSITION | StateFlags::SIZE
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -15,6 +21,11 @@ pub fn run() {
     let monitor = Arc::clone(&runtime);
 
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(window_state_flags())
+                .build(),
+        )
         .manage(runtime)
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
@@ -23,10 +34,13 @@ pub fn run() {
             commands::set_always_on_top,
         ])
         .setup(move |app| {
+            let window = app.get_webview_window("main").ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "main window was not created")
+            })?;
+            window.restore_state(window_state_flags())?;
             #[cfg(all(windows, feature = "webview-memory-experiment"))]
-            if let Some(window) = app.get_webview_window("main") {
-                memory::apply(&window, window.is_focused().unwrap_or(true));
-            }
+            memory::apply(&window, window.is_focused().unwrap_or(true));
+            window.show()?;
             monitor.start(app.handle().clone());
             Ok(())
         })
@@ -42,4 +56,19 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run Herdr Companion");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn restores_only_window_position_and_size() {
+        use tauri_plugin_window_state::StateFlags;
+
+        let flags = super::window_state_flags();
+        assert!(flags.contains(StateFlags::POSITION));
+        assert!(flags.contains(StateFlags::SIZE));
+        assert!(!flags.contains(StateFlags::MAXIMIZED));
+        assert!(!flags.contains(StateFlags::FULLSCREEN));
+        assert!(!flags.contains(StateFlags::VISIBLE));
+    }
 }

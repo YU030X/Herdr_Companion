@@ -1,5 +1,4 @@
 import { useEffect, useState } from "preact/hooks";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   closeWindow,
   getAppState,
@@ -111,22 +110,12 @@ export function App() {
     }
   }
 
-  function handleTitlebarMouseDown(event: MouseEvent) {
-    if (event.button !== 0) return;
-    const target = event.target;
-    if (target instanceof Element && target.closest(".window-controls")) return;
-    void getCurrentWindow().startDragging().catch((error) => setMessage(errorMessage(error)));
-  }
-
   return (
     <main class="app-shell">
-      <header
-        class="titlebar"
-        onMouseDown={handleTitlebarMouseDown}
-      >
-        <div class="titlebar-brand">
-          <span class="titlebar-mark" aria-hidden="true">H</span>
-          <span>Herdr Companion</span>
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="titlebar-brand" data-tauri-drag-region>
+          <span class="titlebar-mark" data-tauri-drag-region aria-hidden="true">H</span>
+          <span data-tauri-drag-region>Herdr Companion</span>
         </div>
         <div class="window-controls">
           <button
@@ -228,7 +217,6 @@ function connectionStatusLabel(status: RuntimeView["connection"]["status"]): str
     case "connected": return "已连接";
     case "connecting": return "连接中";
     case "disconnected": return "已断开";
-    case "incompatible": return "版本不兼容";
   }
 }
 

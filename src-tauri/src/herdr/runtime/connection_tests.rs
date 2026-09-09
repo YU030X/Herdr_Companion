@@ -227,22 +227,41 @@ fn reconnect_replaces_stale_snapshot_and_clears_stale_while_connected() {
 }
 
 #[test]
-fn incompatible_protocol_never_reads_business_data_and_backoff_grows() {
-    let (client, server) = serve(vec![ping(22)]);
+fn numbered_protocol_does_not_gate_compatible_json_api_methods() {
+    let (client, server) = serve(vec![
+        ping(23),
+        snapshot("initial", false),
+        subscribe(false),
+        snapshot("compatible", false),
+    ]);
     let runtime = Runtime::with_client(client);
     let events = Events::default();
-    let mut failures = 0;
+    let mut failures = 4;
     assert_eq!(
         runtime.monitor_once(&events, &mut failures),
         Duration::from_millis(250)
     );
     server.join().unwrap();
+
     assert_eq!(
-        runtime.view().connection.status,
-        ConnectionStatus::Incompatible
+        runtime.view().snapshot.unwrap().workspaces[0].label,
+        "compatible"
     );
-    assert!(!runtime.view().connection.stale);
-    assert!(runtime.view().snapshot.is_none());
+    assert_eq!(
+        events
+            .connections
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|state| state.status)
+            .collect::<Vec<_>>(),
+        [
+            ConnectionStatus::Connecting,
+            ConnectionStatus::Connected,
+            ConnectionStatus::Disconnected,
+        ]
+    );
+
     // Server has exited; subsequent connection failures reach the capped delay.
     for millis in [500, 1000, 2000, 5000, 5000] {
         assert_eq!(
