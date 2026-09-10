@@ -4,11 +4,16 @@ param(
     [ValidateSet('ColdIdle', 'SixAgents')]
     [string]$Scenario,
     [ValidateRange(0, 300)]
-    [int]$SettleSeconds = 30
+    [int]$SettleSeconds = 30,
+    [string]$ExecutablePath
 )
 
 $ErrorActionPreference = 'Stop'
-$releasePath = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../src-tauri/target/release/herdr-companion.exe')).Path
+Import-Module (Join-Path $PSScriptRoot 'MemoryMeasurement.psm1') -Force
+$target = Resolve-MemoryTarget -ScriptRoot $PSScriptRoot -ExecutablePath $ExecutablePath
+$releasePath = $target.Path
+$targetName = $target.Name
+$isNativePrototype = $target.IsNativePrototype
 
 function Get-ReleaseProcesses {
     @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath, CreationDate, WorkingSetSize, PrivatePageCount)
@@ -17,7 +22,7 @@ function Get-ReleaseProcesses {
 $initialProcesses = Get-ReleaseProcesses
 $roots = @($initialProcesses | Where-Object { $_.ExecutablePath -eq $releasePath })
 if ($roots.Count -ne 1) {
-    throw "Expected exactly one running release at $releasePath; found $($roots.Count). Start that executable first."
+    throw "Expected exactly one running target at $releasePath; found $($roots.Count). Start that executable first."
 }
 $root = $roots[0]
 if ($SettleSeconds -gt 0) { Start-Sleep -Seconds $SettleSeconds }
@@ -44,7 +49,9 @@ for ($index = 0; $index -lt $group.Count; $index++) {
     }
 }
 $webviews = @($group | Where-Object { $_.Name -eq 'msedgewebview2.exe' })
-if ($webviews.Count -eq 0) { throw 'No descendant WebView2 processes found; sample would be incomplete.' }
+if (-not $isNativePrototype -and $webviews.Count -eq 0) {
+    throw "Expected at least one msedgewebview2.exe descendant for the production target at $releasePath; repeat after the WebView2 process tree is ready."
+}
 
 function Get-MemoryTotal($Members) {
     [pscustomobject]@{
@@ -59,7 +66,8 @@ function Get-MemoryTotal($Members) {
     Scenario = $Scenario
     ScenarioSource = 'Operator selected; agent count and connection state must be confirmed in the UI'
     SettleSeconds = $SettleSeconds
-    ReleasePath = $releasePath
+    ExecutablePath = $releasePath
+    ExecutableName = $targetName
     ReleaseSha256 = (Get-FileHash -LiteralPath $releasePath -Algorithm SHA256).Hash
     Companion = Get-MemoryTotal $currentRoot
     WebView2 = Get-MemoryTotal $webviews

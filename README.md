@@ -43,3 +43,13 @@ pnpm tauri build --no-bundle
 ```text
 src-tauri/target/release/herdr-companion.exe
 ```
+
+## Native UI prototype
+
+`native-prototype/` contains the disposable A1 Slint prototype for the `<100 MiB` process-group Private Memory requirement. It reuses the Herdr transport and normalized model without the Tauri/WebView2 runtime:
+
+```powershell
+cargo run --manifest-path native-prototype/Cargo.toml
+```
+
+The prototype is measured separately and is not the production Release. See `native-prototype/README.md` for the scope and promotion gate.
