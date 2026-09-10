@@ -297,8 +297,12 @@ fn apply_ui(window: &Weak<AppWindow>, state: &mut UiState) {
     }
 }
 
+fn connection_is_stale(label: &str, has_snapshot: bool) -> bool {
+    label != "已连接" && has_snapshot
+}
+
 fn normalize_workspace_selection(state: &mut UiState) {
-    let selected_exists = state.selected_workspace_id.as_ref().is_some_and(|id| {
+    let selected_workspace_id = state.selected_workspace_id.clone().filter(|id| {
         state.snapshot.as_ref().is_some_and(|snapshot| {
             snapshot
                 .workspaces
@@ -306,13 +310,7 @@ fn normalize_workspace_selection(state: &mut UiState) {
                 .any(|workspace| &workspace.id == id)
         })
     });
-    if !selected_exists {
-        state.selected_workspace_id = None;
-    }
-}
-
-fn connection_is_stale(label: &str, has_snapshot: bool) -> bool {
-    label != "已连接" && has_snapshot
+    state.selected_workspace_id = selected_workspace_id;
 }
 
 fn format_agents(
