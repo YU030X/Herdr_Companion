@@ -9,11 +9,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$targetPath = if ($ExecutablePath) { $ExecutablePath } else { Join-Path $PSScriptRoot '../src-tauri/target/release/herdr-companion.exe' }
-$releasePath = (Resolve-Path -LiteralPath $targetPath).Path
-$targetName = [IO.Path]::GetFileName($releasePath)
-$nativePrototypePath = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../native-prototype/target/release/herdr-companion-native-prototype.exe') -ErrorAction SilentlyContinue
-$isNativePrototype = $nativePrototypePath -and $releasePath -ieq $nativePrototypePath.Path
+Import-Module (Join-Path $PSScriptRoot 'MemoryMeasurement.psm1') -Force
+$target = Resolve-MemoryTarget -ScriptRoot $PSScriptRoot -ExecutablePath $ExecutablePath
+$releasePath = $target.Path
+$targetName = $target.Name
+$isNativePrototype = $target.IsNativePrototype
 
 function Get-ReleaseProcesses {
     @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath, CreationDate, WorkingSetSize, PrivatePageCount)
