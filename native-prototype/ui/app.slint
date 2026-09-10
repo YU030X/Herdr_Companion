@@ -55,10 +55,10 @@ export component AppWindow inherits Window {
                         alignment: center;
                         for tab[index] in workspace-tabs: Rectangle {
                             height: 26px;
-                            min-width: 54px;
+                            width: max(54px, tab-label.preferred-width + 20px);
                             background: index == selected-workspace ? #252525 : #1d1d1d;
                             border-radius: 7px;
-                            Text {
+                            tab-label := Text {
                                 text: tab;
                                 color: index == selected-workspace ? #f0f0f0 : #bababa;
                                 font-size: 11px;
