@@ -4,7 +4,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use slint::{ModelRc, SharedString, VecModel, Weak};
+use slint::{ModelRc, SharedString, Timer, TimerMode, VecModel, Weak};
 
 #[allow(dead_code)]
 #[path = "../../src-tauri/src/herdr/client.rs"]
@@ -87,10 +87,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
         state.selected_workspace_id = selected_workspace_id;
-        apply_ui(&weak_for_ui, &state);
+        apply_ui(&weak_for_ui, &mut state);
     });
 
-    apply_ui(&window.as_weak(), &state.lock().expect("UI state poisoned"));
+    {
+        let mut state = state.lock().expect("UI state poisoned");
+        apply_ui(&window.as_weak(), &mut state);
+    }
+
+    let refresh_state = Arc::clone(&state);
+    let refresh_window = window.as_weak();
+    let refresh_timer = Timer::default();
+    refresh_timer.start(TimerMode::Repeated, Duration::from_secs(1), move || {
+        let mut state = refresh_state.lock().expect("UI state poisoned");
+        if state.snapshot.is_some() && state.connection_label == "已连接" && !state.stale {
+            apply_ui(&refresh_window, &mut state);
+        }
+    });
+
     spawn_monitor(client, Arc::clone(&state), window.as_weak(), retry_signal);
     window.run()?;
     Ok(())
@@ -111,27 +125,21 @@ fn spawn_monitor(
 fn monitor(client: HerdrClient, state: SharedState, window: Weak<AppWindow>, retry: RetrySignal) {
     let mut failure_index = 0_usize;
     loop {
-        update_connection(&state, &window, "连接中", "正在连接 Herdr", None, false);
-        match connect_and_monitor(&client, &state, &window) {
-            Ok(()) => failure_index = 0,
-            Err(error) => update_connection(
-                &state,
-                &window,
-                "已断开",
-                &error.to_string(),
-                None,
-                state.lock().expect("UI state poisoned").snapshot.is_some(),
-            ),
+        // Capture before publishing Connecting/Disconnected so an immediate retry is not lost.
+        let generation = retry.0.lock().expect("retry signal poisoned");
+        let generation = *generation;
+        update_connection(&state, &window, "连接中", "正在连接 Herdr", None);
+        if let Err(error) = connect_and_monitor(&client, &state, &window, &mut failure_index) {
+            update_connection(&state, &window, "已断开", &error.to_string(), None);
         }
         let delay = RETRY_DELAYS[failure_index.min(RETRY_DELAYS.len() - 1)];
         failure_index = (failure_index + 1).min(RETRY_DELAYS.len() - 1);
-        let (generation, signal) = &*retry;
-        let current = *generation.lock().expect("retry signal poisoned");
+        let (_, signal) = &*retry;
         let _ = signal
             .wait_timeout_while(
-                generation.lock().expect("retry signal poisoned"),
+                retry.0.lock().expect("retry signal poisoned"),
                 delay,
-                |value| *value == current,
+                |value| *value == generation,
             )
             .expect("retry signal poisoned");
     }
@@ -141,6 +149,7 @@ fn connect_and_monitor(
     client: &HerdrClient,
     state: &SharedState,
     window: &Weak<AppWindow>,
+    failure_index: &mut usize,
 ) -> Result<(), ClientError> {
     let server = client.ping()?;
     let snapshot = client.snapshot()?;
@@ -154,13 +163,13 @@ fn connect_and_monitor(
             pane_ids = next_pane_ids;
             continue;
         }
+        *failure_index = 0;
         update_connection(
             state,
             window,
             "已连接",
             "Herdr 已连接",
             Some(server.protocol),
-            false,
         );
         loop {
             let _event = subscription.read_event()?;
@@ -187,7 +196,7 @@ fn update_snapshot(
     state.snapshot = Some(reconcile_snapshot(raw, monotonic_millis(), previous));
     state.protocol = protocol;
     state.stale = stale;
-    apply_ui(window, &state);
+    apply_ui(window, &mut state);
 }
 
 fn update_connection(
@@ -196,19 +205,17 @@ fn update_connection(
     label: &str,
     detail: &str,
     protocol: Option<u32>,
-    stale: bool,
 ) {
     let mut state = state.lock().expect("UI state poisoned");
     state.connection_label = label.to_owned();
     state.connection_detail = detail.to_owned();
-    if protocol.is_some() {
-        state.protocol = protocol;
-    }
-    state.stale = stale;
-    apply_ui(window, &state);
+    state.protocol = protocol;
+    state.stale = connection_is_stale(label, state.snapshot.is_some());
+    apply_ui(window, &mut state);
 }
 
-fn apply_ui(window: &Weak<AppWindow>, state: &UiState) {
+fn apply_ui(window: &Weak<AppWindow>, state: &mut UiState) {
+    normalize_workspace_selection(state);
     let view = state.snapshot.as_ref();
     let mut tabs = vec![SharedString::from("全部")];
     if let Some(snapshot) = view {
@@ -243,7 +250,14 @@ fn apply_ui(window: &Weak<AppWindow>, state: &UiState) {
         })
         .unwrap_or_else(|| "全部工作区".to_owned());
     let agents_text = view
-        .map(|snapshot| format_agents(snapshot, selected))
+        .map(|snapshot| {
+            let observed_at = if state.stale {
+                snapshot.captured_at
+            } else {
+                monotonic_millis()
+            };
+            format_agents(snapshot, selected, observed_at)
+        })
         .unwrap_or_else(|| "等待 Snapshot…".to_owned());
     let data = UiData {
         connection_label: state.connection_label.clone(),
@@ -261,7 +275,7 @@ fn apply_ui(window: &Weak<AppWindow>, state: &UiState) {
         stale: state.stale,
     };
     let window = window.clone();
-    let _ = slint::invoke_from_event_loop(move || {
+    if let Err(error) = slint::invoke_from_event_loop(move || {
         let Some(window) = window.upgrade() else {
             return;
         };
@@ -278,10 +292,34 @@ fn apply_ui(window: &Weak<AppWindow>, state: &UiState) {
         window.set_selected_workspace(data.selected_workspace);
         window.set_agents_text(data.agents_text.into());
         window.set_stale(data.stale);
-    });
+    }) {
+        eprintln!("native prototype UI update skipped: {error}");
+    }
 }
 
-fn format_agents(snapshot: &CompanionSnapshot, selected: Option<&String>) -> String {
+fn normalize_workspace_selection(state: &mut UiState) {
+    let selected_exists = state.selected_workspace_id.as_ref().is_some_and(|id| {
+        state.snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot
+                .workspaces
+                .iter()
+                .any(|workspace| &workspace.id == id)
+        })
+    });
+    if !selected_exists {
+        state.selected_workspace_id = None;
+    }
+}
+
+fn connection_is_stale(label: &str, has_snapshot: bool) -> bool {
+    label != "已连接" && has_snapshot
+}
+
+fn format_agents(
+    snapshot: &CompanionSnapshot,
+    selected: Option<&String>,
+    observed_at: u64,
+) -> String {
     let lines = snapshot
         .agents
         .iter()
@@ -293,7 +331,7 @@ fn format_agents(snapshot: &CompanionSnapshot, selected: Option<&String>) -> Str
                 agent.name,
                 agent.task.as_deref().unwrap_or("暂无可信任务描述"),
                 agent.agent_type.as_deref().unwrap_or("Agent"),
-                format_duration(snapshot.captured_at.saturating_sub(agent.first_observed_at))
+                format_duration(observed_at.saturating_sub(agent.first_observed_at))
             )
         })
         .collect::<Vec<_>>();
@@ -347,5 +385,71 @@ mod tests {
         assert_eq!(status_icon(AgentStatus::Idle), "○ Idle");
         assert_eq!(status_icon(AgentStatus::Unknown), "? Unknown");
         assert_eq!(format_duration(3_723_000), "62:03");
+    }
+
+    #[test]
+    fn cached_snapshot_is_stale_until_connection_is_restored() {
+        assert!(connection_is_stale("连接中", true));
+        assert!(connection_is_stale("已断开", true));
+        assert!(!connection_is_stale("连接中", false));
+        assert!(!connection_is_stale("已连接", true));
+    }
+
+    #[test]
+    fn missing_workspace_selection_is_cleared_before_filtering() {
+        let mut state = UiState {
+            snapshot: Some(CompanionSnapshot {
+                version: "test".to_owned(),
+                protocol: 22,
+                captured_at: 100,
+                focused_workspace_id: None,
+                workspaces: vec![model::CompanionWorkspace {
+                    id: "workspace-present".to_owned(),
+                    number: 1,
+                    label: "Present".to_owned(),
+                    focused: false,
+                }],
+                agents: Vec::new(),
+            }),
+            selected_workspace_id: Some("workspace-gone".to_owned()),
+            ..UiState::default()
+        };
+
+        normalize_workspace_selection(&mut state);
+
+        assert_eq!(state.selected_workspace_id, None);
+    }
+
+    #[test]
+    fn connected_duration_uses_the_current_refresh_time() {
+        let snapshot = CompanionSnapshot {
+            version: "test".to_owned(),
+            protocol: 22,
+            captured_at: 1_000,
+            focused_workspace_id: None,
+            workspaces: Vec::new(),
+            agents: vec![model::CompanionAgent {
+                id: "agent-1".to_owned(),
+                terminal_id: "terminal-1".to_owned(),
+                name: "Agent".to_owned(),
+                agent_type: Some("worker".to_owned()),
+                status: AgentStatus::Working,
+                workspace_id: "workspace-1".to_owned(),
+                tab_id: "tab-1".to_owned(),
+                pane_id: "pane-1".to_owned(),
+                task: None,
+                task_source: None,
+                parent_id: None,
+                focused: false,
+                focus_target: "pane-1".to_owned(),
+                revision: 1,
+                state_change_seq: 1,
+                first_observed_at: 1_000,
+                status_observed_at: 1_000,
+                last_event_observed_at: 1_000,
+            }],
+        };
+
+        assert!(format_agents(&snapshot, None, 6_000).ends_with("worker · 00:05"));
     }
 }

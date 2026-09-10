@@ -1,4 +1,4 @@
-import { Button } from "std-widgets.slint";
+import { Button, ScrollView } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
     in property <string> connection-label: "连接中";
@@ -43,25 +43,41 @@ export component AppWindow inherits Window {
             Rectangle {
                 height: 38px;
                 background: #141414;
-                HorizontalLayout {
-                    padding-left: 13px;
-                    padding-right: 13px;
-                    spacing: 5px;
-                    alignment: center;
-                    for tab[index] in workspace-tabs: Rectangle {
-                        height: 26px;
-                        min-width: 54px;
-                        background: index == selected-workspace ? #252525 : #1d1d1d;
-                        border-radius: 7px;
-                        Text {
-                            text: tab;
-                            color: index == selected-workspace ? #f0f0f0 : #bababa;
-                            font-size: 11px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                        TouchArea {
-                            clicked => { root.workspace-clicked(index); }
+                tabs-scroll := ScrollView {
+                    x: 13px;
+                    width: parent.width - 26px;
+                    height: parent.height;
+                    viewport-width: max(self.visible-width, tabs.preferred-width);
+                    viewport-height: self.visible-height;
+
+                    tabs := HorizontalLayout {
+                        spacing: 5px;
+                        alignment: center;
+                        for tab[index] in workspace-tabs: Rectangle {
+                            height: 26px;
+                            min-width: 54px;
+                            background: index == selected-workspace ? #252525 : #1d1d1d;
+                            border-radius: 7px;
+                            Text {
+                                text: tab;
+                                color: index == selected-workspace ? #f0f0f0 : #bababa;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            TouchArea {
+                                clicked => { root.workspace-clicked(index); }
+                                scroll-event(event) => {
+                                    if (event.delta-y != 0 && event.delta-x == 0) {
+                                        tabs-scroll.viewport-x = max(
+                                            -(tabs-scroll.viewport-width - tabs-scroll.visible-width),
+                                            min(0px, tabs-scroll.viewport-x + event.delta-y)
+                                        );
+                                        return accept;
+                                    }
+                                    reject
+                                }
+                            }
                         }
                     }
                 }
@@ -105,9 +121,16 @@ export component AppWindow inherits Window {
                 border-width: 1px;
                 border-color: #262626;
                 vertical-stretch: 1;
-                HorizontalLayout {
-                    padding: 13px;
-                    Text {
+                agents-scroll := ScrollView {
+                    x: 13px;
+                    y: 13px;
+                    width: parent.width - 26px;
+                    height: parent.height - 26px;
+                    viewport-width: self.visible-width;
+                    viewport-height: max(self.visible-height, agents-label.preferred-height);
+
+                    agents-label := Text {
+                        width: parent.width;
                         text: agents-text;
                         color: #bababa;
                         font-size: 12px;
@@ -125,11 +148,15 @@ export component AppWindow inherits Window {
                     padding-right: 13px;
                     alignment: center;
                     Text {
-                        text: "●  " + connection-label;
+                        text: connection-label == "已连接"
+                            ? "●  " + connection-label
+                            : "●  " + connection-label + " · " + connection-detail;
                         color: connection-label == "已连接" ? #3fa266 : #bababa;
                         font-size: 11px;
                         horizontal-alignment: left;
                         vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
                     }
                     Text {
                         text: protocol-label;
@@ -140,6 +167,7 @@ export component AppWindow inherits Window {
                     }
                     Button {
                         visible: connection-label != "已连接";
+                        enabled: connection-label != "连接中";
                         text: "重试";
                         clicked => { root.retry-clicked(); }
                     }

@@ -12,6 +12,8 @@ $ErrorActionPreference = 'Stop'
 $targetPath = if ($ExecutablePath) { $ExecutablePath } else { Join-Path $PSScriptRoot '../src-tauri/target/release/herdr-companion.exe' }
 $releasePath = (Resolve-Path -LiteralPath $targetPath).Path
 $targetName = [IO.Path]::GetFileName($releasePath)
+$nativePrototypePath = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../native-prototype/target/release/herdr-companion-native-prototype.exe') -ErrorAction SilentlyContinue
+$isNativePrototype = $nativePrototypePath -and $releasePath -ieq $nativePrototypePath.Path
 
 function Get-ReleaseProcesses {
     @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath, CreationDate, WorkingSetSize, PrivatePageCount)
@@ -47,6 +49,9 @@ for ($index = 0; $index -lt $group.Count; $index++) {
     }
 }
 $webviews = @($group | Where-Object { $_.Name -eq 'msedgewebview2.exe' })
+if (-not $isNativePrototype -and $webviews.Count -eq 0) {
+    throw "Expected at least one msedgewebview2.exe descendant for the production target at $releasePath; repeat after the WebView2 process tree is ready."
+}
 
 function Get-MemoryTotal($Members) {
     [pscustomobject]@{
