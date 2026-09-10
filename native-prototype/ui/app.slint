@@ -1,0 +1,150 @@
+import { Button } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    in property <string> connection-label: "连接中";
+    in property <string> connection-detail: "正在读取 Herdr";
+    in property <string> protocol-label: "Protocol –";
+    in property <string> workspace-title: "全部工作区";
+    in property <[string]> workspace-tabs;
+    in property <string> agents-text: "等待 Snapshot…";
+    in property <bool> stale: false;
+    in property <int> selected-workspace: 0;
+    callback retry-clicked();
+    callback workspace-clicked(int);
+
+    preferred-width: 360px;
+    preferred-height: 480px;
+    min-width: 320px;
+    min-height: 400px;
+    title: "Herdr Companion · Native Prototype";
+
+    Rectangle {
+        background: #141414;
+        VerticalLayout {
+            spacing: 0px;
+
+            Rectangle {
+                height: 42px;
+                background: #181818;
+                HorizontalLayout {
+                    padding-left: 13px;
+                    padding-right: 10px;
+                    alignment: center;
+                    Text {
+                        text: "H  Herdr Companion";
+                        color: #f0f0f0;
+                        font-size: 14px;
+                        horizontal-alignment: left;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 38px;
+                background: #141414;
+                HorizontalLayout {
+                    padding-left: 13px;
+                    padding-right: 13px;
+                    spacing: 5px;
+                    alignment: center;
+                    for tab[index] in workspace-tabs: Rectangle {
+                        height: 26px;
+                        min-width: 54px;
+                        background: index == selected-workspace ? #252525 : #1d1d1d;
+                        border-radius: 7px;
+                        Text {
+                            text: tab;
+                            color: index == selected-workspace ? #f0f0f0 : #bababa;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => { root.workspace-clicked(index); }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                background: #1d1d1d;
+                border-radius: 14px;
+                border-width: 1px;
+                border-color: #292929;
+                HorizontalLayout {
+                    padding: 13px;
+                    alignment: center;
+                    Text {
+                        text: workspace-title;
+                        color: #f0f0f0;
+                        font-size: 15px;
+                        horizontal-alignment: left;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle {
+                visible: stale;
+                height: 32px;
+                background: #2b2620;
+                border-radius: 7px;
+                Text {
+                    text: "Snapshot 已过期 · 显示最后一次快照";
+                    color: #e8c28a;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                background: #181818;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: #262626;
+                vertical-stretch: 1;
+                HorizontalLayout {
+                    padding: 13px;
+                    Text {
+                        text: agents-text;
+                        color: #bababa;
+                        font-size: 12px;
+                        vertical-alignment: top;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 38px;
+                background: #181818;
+                HorizontalLayout {
+                    padding-left: 13px;
+                    padding-right: 13px;
+                    alignment: center;
+                    Text {
+                        text: "●  " + connection-label;
+                        color: connection-label == "已连接" ? #3fa266 : #bababa;
+                        font-size: 11px;
+                        horizontal-alignment: left;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: protocol-label;
+                        color: #6c6c6c;
+                        font-size: 11px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                    Button {
+                        visible: connection-label != "已连接";
+                        text: "重试";
+                        clicked => { root.retry-clicked(); }
+                    }
+                }
+            }
+        }
+    }
+}
