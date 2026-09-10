@@ -36,6 +36,7 @@ struct UiState {
     connection_detail: String,
     protocol: Option<u32>,
     stale: bool,
+    stale_since: Option<u64>,
     snapshot: Option<CompanionSnapshot>,
     selected_workspace_id: Option<String>,
 }
@@ -196,6 +197,7 @@ fn update_snapshot(
     state.snapshot = Some(reconcile_snapshot(raw, monotonic_millis(), previous));
     state.protocol = protocol;
     state.stale = stale;
+    state.stale_since = None;
     apply_ui(window, &mut state);
 }
 
@@ -209,8 +211,14 @@ fn update_connection(
     let mut state = state.lock().expect("UI state poisoned");
     state.connection_label = label.to_owned();
     state.connection_detail = detail.to_owned();
-    state.protocol = protocol;
-    state.stale = connection_is_stale(label, state.snapshot.is_some());
+    state.protocol = connection_protocol(protocol, state.snapshot.as_ref());
+    let stale = connection_is_stale(label, state.snapshot.is_some());
+    if stale && !state.stale {
+        state.stale_since = Some(monotonic_millis());
+    } else if !stale {
+        state.stale_since = None;
+    }
+    state.stale = stale;
     apply_ui(window, &mut state);
 }
 
@@ -250,14 +258,7 @@ fn apply_ui(window: &Weak<AppWindow>, state: &mut UiState) {
         })
         .unwrap_or_else(|| "全部工作区".to_owned());
     let agents_text = view
-        .map(|snapshot| {
-            let observed_at = if state.stale {
-                snapshot.captured_at
-            } else {
-                monotonic_millis()
-            };
-            format_agents(snapshot, selected, observed_at)
-        })
+        .map(|snapshot| format_agents(snapshot, selected, displayed_observed_at(state, snapshot)))
         .unwrap_or_else(|| "等待 Snapshot…".to_owned());
     let data = UiData {
         connection_label: state.connection_label.clone(),
@@ -299,6 +300,18 @@ fn apply_ui(window: &Weak<AppWindow>, state: &mut UiState) {
 
 fn connection_is_stale(label: &str, has_snapshot: bool) -> bool {
     label != "已连接" && has_snapshot
+}
+
+fn connection_protocol(protocol: Option<u32>, snapshot: Option<&CompanionSnapshot>) -> Option<u32> {
+    protocol.or_else(|| snapshot.map(|snapshot| snapshot.protocol))
+}
+
+fn displayed_observed_at(state: &UiState, snapshot: &CompanionSnapshot) -> u64 {
+    if state.stale {
+        state.stale_since.unwrap_or(snapshot.captured_at)
+    } else {
+        monotonic_millis()
+    }
 }
 
 fn normalize_workspace_selection(state: &mut UiState) {
@@ -449,5 +462,40 @@ mod tests {
         };
 
         assert!(format_agents(&snapshot, None, 6_000).ends_with("worker · 00:05"));
+    }
+
+    #[test]
+    fn stale_duration_freezes_at_disconnect_tick() {
+        let snapshot = CompanionSnapshot {
+            version: "test".to_owned(),
+            protocol: 22,
+            captured_at: 1_000,
+            focused_workspace_id: None,
+            workspaces: Vec::new(),
+            agents: Vec::new(),
+        };
+        let state = UiState {
+            stale: true,
+            stale_since: Some(6_000),
+            ..UiState::default()
+        };
+
+        assert_eq!(displayed_observed_at(&state, &snapshot), 6_000);
+    }
+
+    #[test]
+    fn reconnect_keeps_the_cached_protocol_until_a_new_one_is_known() {
+        let snapshot = CompanionSnapshot {
+            version: "test".to_owned(),
+            protocol: 22,
+            captured_at: 1_000,
+            focused_workspace_id: None,
+            workspaces: Vec::new(),
+            agents: Vec::new(),
+        };
+
+        assert_eq!(connection_protocol(None, Some(&snapshot)), Some(22));
+        assert_eq!(connection_protocol(Some(23), Some(&snapshot)), Some(23));
+        assert_eq!(connection_protocol(None, None), None);
     }
 }
